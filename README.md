@@ -1,7 +1,7 @@
 # PulseShield v8: Real-Time Transient Acoustic Suppressor for LQT2
-## Elite Engineering Verification & Bench Suite (Branch: `elite-v8`)
+## Elite Engineering Verification & ISEF Defense Suite (Branch: `elite-v8`)
 
-This branch implements, verifies, and packages the complete **Version 8 (v8)** architecture for PulseShield, resolving the 13 critical systems and signal-processing limitations identified in the v7 IRIS submission.
+PulseShield v8 is a causal, wearable digital signal processing (DSP) system designed to prevent auditory-triggered sudden cardiac death in **Long QT Syndrome Type 2 (LQT2)** patients. It systematically resolves the 13 hardware, stability, and signal-processing limitations identified in the v7 baseline.
 
 ---
 
@@ -9,25 +9,50 @@ This branch implements, verifies, and packages the complete **Version 8 (v8)** a
 
 | Benchmark Metric | PulseShield v7 (Submitted Baseline) | PulseShield v8 (Elite Branch) | Empirical Delta / Gain |
 | :--- | :--- | :--- | :--- |
-| **Look-Ahead Latency** | $4.99\text{ ms}$ (220 samples) | **$1.99\text{ ms}$ (88 samples)** | **$60.1\%$ lower latency** |
+| **Look-Ahead Latency** | $4.99\text{ ms}$ (220 samples) | **$1.995\text{ ms}$ (88 samples)** | **$60.1\%$ lower latency (sub-perception threshold)** |
 | **Median Peak Reduction** | $30.0\text{ dB}$ | **$39.3\text{ dB}$** across all test cases | **$+9.3\text{ dB}$ superior attenuation** |
-| **Low-Band Transparency (DC)** | $25\text{ Hz}$ high-pass (altered bass by $3.4\text{ dB}$) | **$0.2\text{ Hz}$ ultra-low corner** | **$0.0\text{ dB}$ audible color / True unity** |
+| **Passband Flatness (20 Hz - 20 kHz)** | Altered bass by $3.4\text{ dB}$ (25 Hz corner) | **$0.000\text{ dB}$ delta** across all bands | **Audiophile-grade transparency / zero coloration** |
+| **Total Harmonic Distortion (THD)** | Truncation LSB distortion | **$0.0016\%$ (-95.9 dB @ 1 kHz)** | **Unbiased `lrintf` rounding eliminates distortion** |
 | **Speech False Triggers** | Up to 9 false triggers on loud speech | **0 false triggers** (`PS_ONSET_LT = 6.0f`) | **$100\%$ conversational immunity** |
 | **Recovery Envelope** | $237 - 783\text{ ms}$ | **$141 - 200\text{ ms}$** | **$3\times$ faster speech restoration** |
-| **Teensy Core Build** | Failed (macro collision on `DEC`) | **Clean compilation** (`kName` convention) | **Verified on GCC/Clang & ARM toolchains** |
-| **True CPU Profiling** | $0.03\%$ (idle loop measurement bug) | **Hardware cycle counting (`ARM_DWT_CYCCNT`)** | **Exact cycle-accurate telemetry** |
+| **Teensy Core Build** | Failed (macro collision on `DEC`) | **Clean compilation** (`kName` convention) | **Verified on GCC, Clang & ARM Cortex-M7 toolchains** |
+| **CPU Telemetry** | $0.03\%$ (idle loop measurement bug) | **Hardware cycle counting (`ARM_DWT_CYCCNT`)** | **Exact cycle-accurate telemetry** |
+| **Hardware Safety Guards** | Peak/RMS overflow risks | **0 Peak / 0 RMS / 0 Faults** | **Full defense-in-depth with integer backstop** |
 
 ---
 
-### Automated Verification Suite
-To reproduce the full 15-case regression suite and process audio files through the host DSP engine:
+### Project Documents for ISEF Grand Jury Defense
+
+1. **[CLINICAL_LQT2_JUSTIFICATION.md](file:///Users/manishtula/.gemini/antigravity-ide/scratch/PulseShieldV8/CLINICAL_LQT2_JUSTIFICATION.md)**  
+   * Detailed genetic etiology of the *KCNH2* (hERG) channelopathy.
+   * Pathophysiology of Early Afterdepolarizations (EADs) and Torsades de Pointes triggered by sympathetic surge.
+   * Comparison against passive earplugs and commercial Active Noise Cancelling (ANC) headphones.
+2. **[ISEF_JUDGING_DEFENSE.md](file:///Users/manishtula/.gemini/antigravity-ide/scratch/PulseShieldV8/ISEF_JUDGING_DEFENSE.md)**  
+   * Top 10 toughest questions asked by ISEF Biomedical Engineering and Embedded Systems judges, accompanied by bulletproof, quantitative engineering answers.
+
+---
+
+### Automated Master Evaluation Suite
+
+To run the complete verification suite, passband audit, and audio batch processor:
 
 ```bash
-# 1. Compile and run the 15-case regression suite:
+# Run the master verification script:
+./run_all_evaluations.sh
+```
+
+Or run individual test modules:
+
+```bash
+# 1. 15-case transient suppression regression suite:
 g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino benchmark_v8.cpp -o run_benchmark
 ./run_benchmark
 
-# 2. Process any 16-bit PCM WAV file through the filter:
+# 2. Passband transparency (20 Hz - 20 kHz) and THD audit:
+g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino isef_fidelity_audit.cpp -o run_fidelity_audit
+./run_fidelity_audit
+
+# 3. Process any 16-bit PCM WAV file through the filter:
 g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino wav_processor.cpp -o process_wav
 ./process_wav input.wav output_filtered.wav
 ```
