@@ -34,25 +34,34 @@ PulseShield v8 is a causal, wearable digital signal processing (DSP) system desi
 
 ### Automated Master Evaluation Suite
 
-To run the complete verification suite, passband audit, and audio batch processor:
+To run the complete verification suite, passband audit, 180-clip standardized battery, and figure generation:
 
 ```bash
 # Run the master verification script:
 ./run_all_evaluations.sh
 ```
 
-Or run individual test modules:
+Or run individual verification and evaluation modules:
 
 ```bash
-# 1. 15-case transient suppression regression suite:
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino benchmark_v8.cpp -o run_benchmark
+# 1. Compile host libraries and binaries:
+./build.sh
+
+# 2. 180-clip standardized evaluation battery (exports battery_raw.csv):
+python3 run_battery.py
+
+# 3. Control stimuli & false-trigger immunity audit (80 control runs):
+python3 run_extra.py
+
+# 4. Generate publication-quality waveform & frequency response figures:
+python3 figures.py
+
+# 5. 15-case C++ transient suppression regression suite:
 ./run_benchmark
 
-# 2. Passband transparency (20 Hz - 20 kHz) and THD audit:
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino isef_fidelity_audit.cpp -o run_fidelity_audit
+# 6. Passband transparency (20 Hz - 20 kHz) and THD audit:
 ./run_fidelity_audit
 
-# 3. Process any 16-bit PCM WAV file through the filter:
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino wav_processor.cpp -o process_wav
+# 7. Process any 16-bit PCM WAV file through the filter:
 ./process_wav input.wav output_filtered.wav
 ```

@@ -7,25 +7,31 @@ echo "========================================================================"
 echo "Target Platform: Teensy 4.0 (ARM Cortex-M7) & Host C++17 Verification"
 echo ""
 
-echo "[1/4] Compiling 15-case transient suppression benchmark..."
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino benchmark_v8.cpp -o run_benchmark
-
-echo "[2/4] Compiling passband transparency and THD fidelity audit..."
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino isef_fidelity_audit.cpp -o run_fidelity_audit
-
-echo "[3/4] Compiling standalone 16-bit PCM WAV batch processor..."
-g++ -x c++ -DPS_HOST -O3 -std=c++17 -Wall PulseShield_v8_audioshield.ino wav_processor.cpp -o process_wav
+echo "[1/6] Running master build..."
+./build.sh
 
 echo ""
-echo "=== STEP 1: RUNNING TRANSIENT SUPPRESSION BENCHMARK ==="
+echo "[2/6] Running 15-case C++ transient regression suite..."
 ./run_benchmark
 
 echo ""
-echo "=== STEP 2: RUNNING PASSBAND FIDELITY & THD AUDIT ==="
+echo "[3/6] Running passband transparency and THD fidelity audit..."
 ./run_fidelity_audit
 
 echo ""
-echo "=== STEP 3: BATCH PROCESSING WAV SAMPLES ==="
+echo "[4/6] Running 180-clip standardized evaluation battery (battery_raw.csv)..."
+python3 run_battery.py
+
+echo ""
+echo "[5/6] Running non-event control stimuli & false-trigger immunity audit..."
+python3 run_extra.py
+
+echo ""
+echo "[6/6] Generating publication-quality waveforms and response plots..."
+python3 figures.py
+
+echo ""
+echo "=== BATCH PROCESSING SAMPLE WAV FILES ==="
 if [ -f "test_audio/stimulus_alarm_3k.wav" ]; then
     ./process_wav test_audio/stimulus_alarm_3k.wav test_audio/filtered_alarm_3k.wav
 fi
