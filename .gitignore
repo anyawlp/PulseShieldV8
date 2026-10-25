@@ -1,0 +1,8 @@
+run_benchmark
+run_fidelity_audit
+process_wav
+*.o
+*.dylib
+*.so
+*.dSYM/
+.DS_Store

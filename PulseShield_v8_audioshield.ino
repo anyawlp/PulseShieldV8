@@ -233,7 +233,7 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
     if (count < kSH[j] + kWLT) continue;
     int p = hpos - kSH[j]; if (p < 0) p += kHN;
     if (hdb[hpos] - hdb[p] > kOnsetDb[j] && env > kLoudFloor && env > kOnsetLt * hlt[p]) {
-      flag = true; g_need = fminf(g_need, fmaxf(PS_GAIN_FLOOR, henv[p] / level)); base_hit = fminf(base_hit, henv[p]);
+      flag = true; g_need = fminf(g_need, fmaxf(PS_GAIN_FLOOR, henv[p] / fmaxf(level, 1e-9f))); base_hit = fminf(base_hit, henv[p]);
     }
   }
   hpos++; if (hpos == kHN) hpos = 0; if (count < 1000000000) count++;
@@ -255,7 +255,7 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
       float tonal = ((float)sA5 / kW5) / (e5 * 32768.0f + 1e-9f);
       if (rise > kSedRiseDb && e5 > kLtRatio * sedL[pl] && stab < kSedStabDb && tonal > kSedTonal) {
         sedFlag = true; sedBase = sedE[pl];
-        sedNeed = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, sedE[pl] / level));
+        sedNeed = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, sedE[pl] / fmaxf(level, 1e-9f)));
       }
     }
   }
@@ -287,7 +287,7 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
   if (count < kWarmupN) r = fminf(r, PS_START_GAIN);
 
   // ---- release shaping in log domain (acceleration-limited S-curve, braking landing at 0 dB) ----
-  float lr = logf(r), rr = rho + acc; if (rr > rhoMax) rr = rhoMax;
+  float lr = logf(fmaxf(r, 1e-6f)), rr = rho + acc; if (rr > rhoMax) rr = rhoMax;
   float room = -qPrev; if (room < 0) room = 0;
   float brake = sqrtf(2.0f * acc * room); if (rr > brake) rr = brake;
   float Z = qPrev + rr; if (Z > 0) Z = 0;
@@ -311,7 +311,7 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
 
   // ---- delayed audio * gain, then exact int16 guards ----
   float xd = dly[dpos]; dly[dpos] = (float)xi; if (++dpos == kD) dpos = 0;
-  int32_t yi = (int32_t)(xd * g);                 // truncation toward zero never increases magnitude
+  int32_t yi = (int32_t)lrintf(xd * g);            // unbiased rounding minimizes quantization noise & harmonic distortion
   if (yi > pki) { yi = pki; guardPeak++; } else if (yi < -pki) { yi = -pki; guardPeak++; }
   uint32_t old = yE5[py5];
   int64_t used = sY5 - (int64_t)old;
@@ -428,8 +428,12 @@ void setup() {
   Serial.begin(115200);
   uint32_t tWait = millis();
   while (!Serial && millis() - tWait < 2000) {}
+#ifdef ARM_DWT_CYCCNT
+  ARM_DEMCR |= ARM_DEMCR_TRCENA;
+  ARM_DWT_CTRL |= ARM_DWT_CTRL_CYCCNTENA;
+#endif
   ps8::reset();                                  // before the audio interrupt can ever call step()
-  AudioMemory(20);
+  AudioMemory(60);                               // ample headroom (Teensy 4.0 has 1MB RAM; 60 blocks = 15KB)
   bool codec_ok = false;
   for (int a = 1; a <= 5 && !codec_ok; a++) {
     codec_ok = sgtl5000_1.enable();
