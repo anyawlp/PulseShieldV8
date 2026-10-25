@@ -456,6 +456,7 @@ void setup() {
   ARM_DWT_CTRL |= ARM_DWT_CTRL_CYCCNTENA;
 #endif
   ps8::reset();                                  // before the audio interrupt can ever call step()
+  Wire.begin();                                  // initialize I2C master hardware before codec operations
   AudioMemory(60);                               // ample headroom (Teensy 4.0 has 1MB RAM; 60 blocks = 15KB)
   bool codec_ok = false;
   for (int a = 1; a <= 5 && !codec_ok; a++) {
