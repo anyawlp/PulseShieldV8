@@ -6,3 +6,5 @@ process_wav
 *.so
 *.dSYM/
 .DS_Store
+__pycache__/
+*.pyc

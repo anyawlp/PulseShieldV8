@@ -27,8 +27,13 @@ echo "[5/6] Running non-event control stimuli & false-trigger immunity audit..."
 python3 run_extra.py
 
 echo ""
-echo "[6/6] Generating publication-quality waveforms and response plots..."
+echo ""
+echo "[6/7] Generating publication-quality waveforms and response plots..."
 python3 figures.py
+
+echo ""
+echo "[7/7] Running in silico LQT2 cardiac cellular electrophysiology simulation..."
+python3 simulate_lqt2_cardiac.py
 
 echo ""
 echo "=== BATCH PROCESSING SAMPLE WAV FILES ==="
