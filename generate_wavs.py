@@ -3,7 +3,7 @@ import scipy.io.wavfile as wavfile
 import subprocess
 import os
 
-print("=== Generating Synthetic Test Suite for PulseShield v8 ===")
+print("=== Generating Synthetic Test Suite for PulseShield v8-Elite ===")
 os.makedirs("test_audio", exist_ok=True)
 sr = 44100
 dur = 2.5

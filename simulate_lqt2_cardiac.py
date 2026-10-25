@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PulseShield v8: Biophysical LQT2 Cardiac Electrophysiology & EAD Simulation
+PulseShield v8-Elite: Biophysical LQT2 Cardiac Electrophysiology & EAD Simulation
 ============================================================================
 Translational Medical Science (TMED) & Biomedical Engineering (ENBM) Module
 for Regeneron ISEF Grand Jury Defense.
@@ -8,7 +8,7 @@ for Regeneron ISEF Grand Jury Defense.
 Models the cellular arrhythmogenic mechanism of auditory-triggered Sudden
 Cardiac Death in Long QT Syndrome Type 2 (KCNH2 / hERG channelopathy) and
 demonstrates quantitative Early Afterdepolarization (EAD) prevention by
-PulseShield v8 transient acoustic suppression.
+PulseShield v8-Elite transient acoustic suppression.
 
 Coupled Biophysical Pathway:
   1. Acoustic Wavefront (dB SPL & d(SPL)/dt)
@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 
 def simulate_cardiac_response():
     print("=" * 70)
-    print("  PulseShield v8: In Silico LQT2 Cardiac Electrophysiology Simulation")
+    print("  PulseShield v8-Elite: In Silico LQT2 Cardiac Electrophysiology Simulation")
     print("=" * 70)
     
     # -------------------------------------------------------------------------

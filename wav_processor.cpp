@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (process_wav_file(argv[1], argv[2])) {
-        std::cout << "Successfully processed " << argv[1] << " -> " << argv[2] << " through PulseShield v8 DSP engine.\n";
+        std::cout << "Successfully processed " << argv[1] << " -> " << argv[2] << " through PulseShield v8-Elite DSP engine.\n";
         return 0;
     } else {
         std::cerr << "Failed to process audio file.\n";

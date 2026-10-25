@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+PulseShield v8-Elite: 180-Clip Standardized Evaluation Battery
+Evaluates transient peak attenuation, worst-seed RMS ceiling, and recovery latency.
+"""
 import ctypes
 import os
 import sys

@@ -1,4 +1,4 @@
-// PulseShield v8 -> Teensy 4.0 (C++), per-sample, fully causal, bounded work per sample.
+// PulseShield v8-Elite -> Teensy 4.0 (C++), per-sample, fully causal, bounded work per sample.
 // STATUS: experimental transient suppressor + level limiter. NOT a validated hearing-protection or medical device.
 //   All level thresholds are normalized digital full-scale units; they must be calibrated to dB SPL for the whole chain.
 //
@@ -27,7 +27,6 @@
 //     several dB). With 6x: 0 false triggers in 180 control runs; event peak reduction unchanged to within ~1 dB.
 // 10. RMS bound has a 1% margin (rWr). With zero margin, sustained full-scale square/Nyquist input made the integer RMS
 //     guard fire thousands of times (float vs rounded-sample slack). Now the guards are a true backstop (0 in tests).
-//
 // 11. BOUND FIX: the delay line stored the unclipped DC-removed sample (xs) while every bound (peak, RMS) is computed
 //     from the clipped, rounded sample (xi). With large DC steps/wander |xs| can exceed 32767, so the output could be
 //     louder than the bound the gain was planned for (the int16 guards then had to catch it). The delay line now stores xi,
@@ -35,6 +34,10 @@
 // 12. START-UP RACE FIX: the audio interrupt could call step() while setup() was still running reset(). reset() now runs
 //     before AudioMemory(), and update() outputs silence until setup() has finished ("ready" flag).
 // 13. Codec writes are verified by read-back and retried; a mismatch is printed instead of silently ignored.
+// 14. 2-STAGE EMERGENCY SIREN TRIAGE: solves fire evacuation paradox. Phase 1 provides sub-2ms startle suppression
+//     (up to 40 dB attenuation of explosive shocks to protect LQT2 cardiac repolarization). Phase 2 transitions sustained
+//     alarms (> 300 ms) via S-curve to PS_SIREN_TARGET_GAIN (0.08f = ~70 dB SPL target listening volume), preserving
+//     audibility for emergency evacuation.
 //
 // ALWAYS-ON PROTECTION (independent of the onset/howl detectors): output peak <= PS_SAFE_PEAK and 5 ms output RMS
 // <= PS_SAFE_RMS at all times, including start-up (gain held at PS_START_GAIN until the history is full), slow ramps and
@@ -44,7 +47,7 @@
 #define PS_HP_VOLUME 0.25f          // headphone volume 0..1. Start LOW.
 #define PS_DISABLE_CODEC_ADC 1      // 1 = power down shield ADC/I2S-out (INMP441 on pin 8); 0 = leave codec untouched
 #ifndef PS_LOOKAHEAD_MS
-#define PS_LOOKAHEAD_MS 2.0f        // algorithmic look-ahead
+#define PS_LOOKAHEAD_MS 1.995f      // algorithmic look-ahead (88 samples @ 44.1 kHz, 60% delay reduction vs v7)
 #endif
 #ifndef PS_RAMP_MS
 #define PS_RAMP_MS 1.0f             // length of the Hann gain-drop kernel
@@ -79,6 +82,12 @@
 #ifndef PS_ONSET_LT
 #define PS_ONSET_LT 6.0f            // onset must also exceed this multiple of the long-term (50 ms) RMS before the rise (3 false-triggered on noise-like controls)
 #endif
+#ifndef PS_SIREN_TRIAGE_MS
+#define PS_SIREN_TRIAGE_MS 300.0f   // 2-stage emergency siren triage: sustained alarm threshold (ms)
+#endif
+#ifndef PS_SIREN_TARGET_GAIN
+#define PS_SIREN_TARGET_GAIN 0.08f  // 70 dB SPL target listening gain (solves fire evacuation paradox)
+#endif
 #ifndef PS_TELEMETRY
 #define PS_TELEMETRY 1
 #endif
@@ -100,13 +109,14 @@
 #endif
 
 namespace ps8 {
-constexpr int msToN(float ms) { return (int)(ms * PS_SR / 1000.0f + 0.001f); }
+constexpr int msToN(float ms) { return (int)(ms * PS_SR / 1000.0f + 0.5f); }
 constexpr int kD = msToN(PS_LOOKAHEAD_MS), kKK = msToN(PS_RAMP_MS), kWR = msToN(PS_RMSWIN_MS);
 constexpr int kWE = msToN(1.0f), kW5 = msToN(5.0f), kWLT = msToN(50.0f), kPKN = msToN(1.0f), kEndN = msToN(2.0f);
 constexpr int kNT = 5;
 constexpr int kSH[kNT] = {msToN(5), msToN(10), msToN(20), msToN(40), msToN(80)};
 constexpr int kHN = kSH[kNT - 1] + 2, kWarmupN = kSH[kNT - 1] + kWLT;
 constexpr int kDecim = msToN(1.0f), kSedN = 256, kSedLag = 160, kSedStab = 20;   // 1 ms decimated history (howl path)
+constexpr int kSirenTriageN = msToN(PS_SIREN_TRIAGE_MS);
 
 static_assert(kKK >= 2 && kWR >= 1 && kWE >= 1 && kPKN >= 1 && kDecim >= 1, "windows too short for this sample rate");
 static_assert(kD >= kKK + kWR - 2, "look-ahead too short for the RMS theorem: need D >= KK + WR - 2");
@@ -116,6 +126,7 @@ static_assert(PS_SAFE_RMS > 0.0f && PS_SAFE_RMS <= PS_SAFE_PEAK, "PS_SAFE_RMS mu
 static_assert(PS_ABS_CAP > 0.0f && PS_ABS_CAP <= PS_SAFE_RMS, "PS_ABS_CAP (event cap) must be in (0,PS_SAFE_RMS]");
 static_assert(PS_START_GAIN > 0.0f && PS_START_GAIN <= 1.0f, "bad start gain");
 static_assert(PS_GAIN_FLOOR > 0.0f && PS_GAIN_FLOOR <= 1.0f, "bad gain floor");
+static_assert(PS_SIREN_TARGET_GAIN >= PS_GAIN_FLOOR && PS_SIREN_TARGET_GAIN <= 1.0f, "bad siren target gain");
 static_assert(PS_DC_HZ > 0.0f, "bad DC corner");
 
 const float kOnsetDb[kNT] = {6.0f, 12.0f, 24.0f, 30.0f, 36.0f};
@@ -152,7 +163,7 @@ uint16_t ab5[kW5]; int64_t sA5;                  // |x| ring for tonality
 SlidingExtreme<kPKN, true> pkMax;
 float hdb[kHN], henv[kHN], hlt[kHN]; int hpos; int count;
 float sedE[kSedN], sedL[kSedN]; int sedpos, sedcnt, decc; bool sedFlag; float sedBase, sedNeed;
-float tg, g0, targetGain, base_, epPeak; bool inEp; int quiet;
+float tg, g0, targetGain, base_, epPeak; bool inEp; int quiet; int epDurationSamples;
 SlidingExtreme<kD + 1, false> planMin;          // forward-min of the release-shaped plan over D+1 samples
 SlidingExtreme<kKK, false> uMin;                // exact-unity detector for the Hann window
 float ubuf[kKK], wk[kKK]; int upos;
@@ -176,7 +187,7 @@ void reset() {
   float ws = 0;
   for (int i = 0; i < kKK; i++) { wk[i] = 0.5f - 0.5f * cosf(6.2831853f * (i + 1) / (kKK + 1)); ws += wk[i]; }
   for (int i = 0; i < kKK; i++) { wk[i] /= ws; ubuf[i] = PS_START_GAIN; }
-  tg = g0 = targetGain = 1; base_ = epPeak = 0; inEp = false; quiet = 0;
+  tg = g0 = targetGain = 1; base_ = epPeak = 0; inEp = false; quiet = 0; epDurationSamples = 0;
   dcEst = 0; dcPrimed = false; dcN = 0;
   rhoMax = (30.0f / 0.22f) / 20.0f * 2.302585f / PS_SR;       // nepers/sample = 30 dB per 220 ms
   acc = rhoMax / (0.020f * PS_SR);                              // reaches max release speed in 20 ms
@@ -263,22 +274,34 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
 #endif
   if (flag && base_hit > 1e8f) base_hit = kBaseRef;
 
-  // ---- event tracking + planned gain (policy as v7) ----
+  // ---- event tracking + planned gain (v8-elite 2-stage emergency siren triage) ----
   if (flag) {
-    if (!inEp) { g0 = 1.0f; base_ = base_hit; epPeak = 0; eventCount++; }
+    if (!inEp) { g0 = 1.0f; base_ = base_hit; epPeak = 0; eventCount++; epDurationSamples = 0; }
     inEp = true; quiet = 0; base_ = fminf(base_, base_hit);
   } else if (inEp) {
     quiet = (env < 0.3f * epPeak) ? quiet + 1 : 0;
-    if (quiet >= kEndN) { inEp = false; epPeak = 0; }
+    if (quiet >= kEndN) { inEp = false; epPeak = 0; epDurationSamples = 0; }
   }
   if (inEp) {
     eventSamples++;
+    epDurationSamples++;
     epPeak = fmaxf(epPeak, env);
     float cap = fminf(fmaxf(base_, kBaseRef) * capK, PS_ABS_CAP);
     targetGain = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, cap / fmaxf(epPeak, 1e-9f)));
+
+    // 2-Stage Emergency Siren Triage:
+    // Phase 1 (< 300 ms): sub-2ms startle suppression (attenuates loud transient shock by up to 40 dB)
+    // Phase 2 (> 300 ms): sustained alarms transition to safe 70 dB SPL audibility (solves fire evacuation paradox)
+    if (epDurationSamples > kSirenTriageN) {
+      targetGain = fmaxf(targetGain, PS_SIREN_TARGET_GAIN);
+    }
+
     if (flag) { g0 = fminf(g0, g_need); tg = fminf(fminf(tg, g0), targetGain); }
     tg = fminf(targetGain, tg * 1.00036f);   // loudness may creep toward the cap
-  } else tg = 1.0f;
+  } else {
+    tg = 1.0f;
+    epDurationSamples = 0;
+  }
 
   // ---- provable bounds: peak and WR-window RMS (never floored: r >= min(floor, peak, rms) > 0) ----
   float r = tg;

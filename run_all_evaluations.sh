@@ -11,7 +11,7 @@ echo "[1/6] Running master build..."
 ./build.sh
 
 echo ""
-echo "[2/6] Running 15-case C++ transient regression suite..."
+echo "[2/6] Running 16-case C++ transient & emergency triage regression suite..."
 ./run_benchmark
 
 echo ""

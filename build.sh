@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Building PulseShield v8 DSP Host Suite ==="
+echo "=== Building PulseShield v8-Elite DSP Host Suite ==="
 OS="$(uname -s)"
 
 # 1. Compile host shared library for Python ctypes (run_battery.py, figures.py)

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+PulseShield v8-Elite: False-Trigger Immunity Audit
+Evaluates conversational speech, loud pink noise, and tonal swell immunity.
+"""
 import ctypes
 import os
 import sys

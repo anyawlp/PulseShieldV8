@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+PulseShield v8-Elite: Publication Figure Generator
+Generates waveform comparison and passband frequency response plots.
+"""
 import ctypes
 import os
 import sys

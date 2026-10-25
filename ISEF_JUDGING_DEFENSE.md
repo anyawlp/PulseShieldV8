@@ -1,7 +1,7 @@
-# ISEF Grand Award Judging Defense: PulseShield v8
+# ISEF Grand Award Judging Defense: PulseShield v8-Elite
 
 **Target Categories:** Biomedical Engineering (`ENBM`) · Embedded Systems (`EBED`) · Translational Medical Science (`TMED`)  
-**Project:** PulseShield v8 — Wearable Real-Time Transient Acoustic Suppressor for Long QT Syndrome Type 2  
+**Project:** PulseShield v8-Elite — Wearable Real-Time Transient Acoustic Suppressor for Long QT Syndrome Type 2  
 
 ---
 

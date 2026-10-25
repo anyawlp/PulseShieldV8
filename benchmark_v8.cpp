@@ -43,7 +43,7 @@ std::vector<int16_t> generate_stimulus(
 
     float bg_amp = std::pow(10.0f, background_dbfs / 20.0f);
     int event_start = static_cast<int>(1.0f * sample_rate); // starts at 1.0 s
-    int event_dur = static_cast<int>(0.05f * sample_rate);  // transient window
+    int event_dur = (event_type == "siren_triage") ? static_cast<int>(0.8f * sample_rate) : static_cast<int>(0.05f * sample_rate);
 
     // PRNG seed state
     uint32_t seed = 1337;
@@ -66,8 +66,8 @@ std::vector<int16_t> generate_stimulus(
                 // Exponential decay impulse
                 float env = std::exp(-t * 200.0f);
                 event_val = peak_target * env * rnd();
-            } else if (event_type == "alarm") {
-                // 3 kHz tone burst
+            } else if (event_type == "alarm" || event_type == "siren_triage") {
+                // 3 kHz tone burst (transient burst or sustained siren)
                 event_val = peak_target * std::sin(2.0f * M_PI * 3000.0f * t);
             } else if (event_type == "door_slam") {
                 // Low frequency resonant burst (80 Hz + noise)
@@ -176,7 +176,8 @@ int main() {
         {"Howl/Tonal (Loud)", "howl", -30.0f},
         {"Shout 600Hz (Speech)", "shout", -40.0f},
         {"Firecracker (Quiet)", "firecracker", -50.0f},
-        {"Firecracker (Loud)", "firecracker", -30.0f}
+        {"Firecracker (Loud)", "firecracker", -30.0f},
+        {"Siren Triage (70dB Evac)", "siren_triage", -40.0f}
     };
 
     std::cout << std::left << std::setw(24) << "Test Case"

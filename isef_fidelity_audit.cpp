@@ -125,9 +125,10 @@ void audit_thd() {
 
 int main() {
     std::cout << "========================================================================\n";
-    std::cout << "       PULSESHIELD V8 ISEF PASSBAND FIDELITY & TRANSPARENCY AUDIT       \n";
+    std::cout << "    PULSESHIELD V8-ELITE ISEF PASSBAND FIDELITY & TRANSPARENCY AUDIT    \n";
     std::cout << "========================================================================\n";
-    std::cout << "Engine: Causal Look-Ahead Hann Taper (88 samples delay = 1.995 ms)\n";
+    std::cout << "Engine: Causal Look-Ahead Hann Taper (" << ps_delay() << " samples delay = " 
+              << std::fixed << std::setprecision(3) << (ps_delay() * 1000.0f / 44100.0f) << " ms)\n";
 
     audit_frequency_response();
     audit_thd();

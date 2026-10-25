@@ -1,4 +1,4 @@
-# Clinical & Electrophysiological Justification: PulseShield v8 in Long QT Syndrome Type 2 (LQT2)
+# Clinical & Electrophysiological Justification: PulseShield v8-Elite in Long QT Syndrome Type 2 (LQT2)
 
 **Author:** Anya / Engineering Team  
 **Category:** Biomedical Engineering (`ENBM`) / Translational Medical Science (`TMED`) / Embedded Systems (`EBED`)  
