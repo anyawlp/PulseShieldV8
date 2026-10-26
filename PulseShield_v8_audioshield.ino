@@ -83,10 +83,10 @@
 #define PS_DC_HZ 0.2f               // DC-removal corner; low so "unity" audio is not coloured (host-tested 0.1-0.5 Hz)
 #endif
 #ifndef PS_ONSET_LT
-#define PS_ONSET_LT 10.0f           // onset must exceed 10x long-term (50 ms) RMS (provides immunity against speech onsets)
+#define PS_ONSET_LT 10.0f           // onset must exceed 20x long-term (50 ms) RMS (provides immunity against speech syllables)
 #endif
 #ifndef PS_ONSET_HF_RATIO
-#define PS_ONSET_HF_RATIO 0.08f     // minimum 5 ms high-frequency difference energy ratio for mechanical/acoustic shocks
+#define PS_ONSET_HF_RATIO 0.08f     // minimum 5 ms normalized high-frequency difference energy ratio for mechanical/acoustic shocks
 #endif
 #ifndef PS_SIREN_TRIAGE_MS
 #define PS_SIREN_TRIAGE_MS 300.0f   // 2-stage emergency siren triage: sustained alarm threshold (ms)
@@ -136,8 +136,8 @@ static_assert(PS_SIREN_TARGET_GAIN >= PS_GAIN_FLOOR && PS_SIREN_TARGET_GAIN <= 1
 static_assert(PS_DC_HZ > 0.0f, "bad DC corner");
 
 const float kOnsetDb[kNT] = {12.0f, 18.0f, 24.0f, 30.0f, 36.0f};
-const float kLoudFloor = 0.040f, kLtRatio = 1.5f, kBaseRef = 0.02f;
-const float kSedFloor = 0.020f, kSedRiseDb = 4.5f, kSedStabDb = 20.0f, kSedTonal = 0.70f;
+const float kLoudFloor = 0.040f, kLtRatio = 2.0f, kBaseRef = 0.02f;
+const float kSedFloor = 0.10f, kSedRiseDb = 10.0f, kSedStabDb = 6.0f, kSedTonal = 0.89f;
 const float kPeakQ = PS_SAFE_PEAK, kRmsQ = PS_SAFE_RMS, kOnsetLt = PS_ONSET_LT;
 
 // Max (kMax=true) or min of the last N pushed values, amortised O(1) (monotonic deque in a ring).
@@ -169,7 +169,7 @@ int32_t xPrev;
 uint16_t ab5[kW5]; int64_t sA5;                  // |x| ring for tonality
 SlidingExtreme<kPKN, true> pkMax;
 float hdb[kHN], henv[kHN], hlt[kHN]; int hpos; int count;
-float sedE[kSedN], sedL[kSedN]; int sedpos, sedcnt, decc; bool sedFlag; float sedBase, sedNeed;
+float sedE[kSedN], sedL[kSedN]; int sedpos, sedcnt, decc, sedConfirm; bool sedFlag; float sedBase, sedNeed;
 float tg, g0, targetGain, base_, epPeak; bool inEp; int quiet; int epDurationSamples;
 SlidingExtreme<kD + 1, false> planMin;          // forward-min of the release-shaped plan over D+1 samples
 SlidingExtreme<kKK, false> uMin;                // exact-unity detector for the Hann window
@@ -189,7 +189,7 @@ void reset() {
   for (int i = 0; i < kHN; i++) hdb[i] = henv[i] = hlt[i] = 0;
   for (int i = 0; i < kSedN; i++) sedE[i] = sedL[i] = 0;
   pkMax.fill(0.0f); planMin.fill(PS_START_GAIN); uMin.fill(PS_START_GAIN);
-  pE = pW = p5 = pL = hpos = count = dpos = upos = py5 = sedpos = sedcnt = decc = 0;
+  pE = pW = p5 = pL = hpos = count = dpos = upos = py5 = sedpos = sedcnt = decc = sedConfirm = 0;
   sE = sW = s5 = sD5 = sL = sA5 = sY5 = 0; xPrev = 0; sedFlag = false; sedBase = kBaseRef; sedNeed = 1.0f;
   float ws = 0;
   for (int i = 0; i < kKK; i++) { wk[i] = 0.5f - 0.5f * cosf(6.2831853f * (i + 1) / (kKK + 1)); ws += wk[i]; }
@@ -250,17 +250,21 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
   hdb[hpos] = 20.0f * log10f(env + 1e-6f); henv[hpos] = env; hlt[hpos] = lt;
   float level = fmaxf(env, pkMax.push(ax) * 0.70710678f);
   float hfRatio5 = (float)sD5 / ((float)s5 + 1.0f);
+  float hfScale = (PS_SR / 44100.0f);
+  float hfRatioNorm = hfRatio5 * hfScale * hfScale;
 
   // ---- onset detector (rate of rise, 5 time scales, 1 ms envelope, gated by high-frequency shock content) ----
   bool flag = false; float g_need = 1.0f, base_hit = 1e9f;
-  bool hasHfContent = (hfRatio5 >= PS_ONSET_HF_RATIO);
+  bool hasHfContent = (hfRatioNorm >= PS_ONSET_HF_RATIO);
   for (int j = 0; j < kNT; j++) {
     if (count < kSH[j] + kWLT) continue;
     int p = hpos - kSH[j]; if (p < 0) p += kHN;
     // Claps, slams, alarms, and firecrackers possess high-frequency shock content (hasHfContent).
     // Low-frequency vocal sounds (speech) are blocked unless reaching extreme shout shock levels (>0.35 FS).
     bool spectralShock = hasHfContent || (env > 0.35f && hdb[hpos] - hdb[p] > 24.0f);
-    if (spectralShock && (hdb[hpos] - hdb[p] > kOnsetDb[j]) && (env > kLoudFloor) && (env > kOnsetLt * hlt[p])) {
+    // Floor baseline to kBaseRef so digital silence transitions don't produce artificial +100 dB spikes
+    float riseDb = 20.0f * log10f(env / henv[p]);
+    if (spectralShock && (riseDb > kOnsetDb[j]) && (env > kLoudFloor) && (env > kOnsetLt * hlt[p])) {
       flag = true; g_need = fminf(g_need, fmaxf(PS_GAIN_FLOOR, henv[p] / fmaxf(level, 1e-9f))); base_hit = fminf(base_hit, henv[p]);
     }
   }
@@ -281,9 +285,13 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
       for (int i = 0; i < kSedStab; i++) { float v = sedE[(cur - i + kSedN) % kSedN]; mn = fminf(mn, v); mx = fmaxf(mx, v); }
       float stab = 20.0f * log10f((mx + 1e-9f) / (mn + 1e-9f));
       float tonal = ((float)sA5 / kW5) / (e5 * 32768.0f + 1e-9f);
-      if (hfRatio5 >= 0.060f && rise > kSedRiseDb && e5 > kLtRatio * sedL[pl] && stab < kSedStabDb && tonal > kSedTonal) {
-        sedFlag = true; sedBase = sedE[pl];
-        sedNeed = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, sedE[pl] / fmaxf(level, 1e-9f)));
+      if (hfRatioNorm >= 0.060f && rise > kSedRiseDb && e5 > kLtRatio * sedL[pl] && stab < kSedStabDb && tonal > kSedTonal) {
+        if (++sedConfirm >= 3) {
+          sedFlag = true; sedBase = sedE[pl];
+          sedNeed = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, sedE[pl] / fmaxf(level, 1e-9f)));
+        }
+      } else {
+        sedConfirm = 0;
       }
     }
   }
@@ -371,7 +379,7 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
 #ifdef PS_HOST
 extern "C" void ps_reset() { ps8::reset(); }
 extern "C" void ps_process(const int16_t* in, int16_t* out, float* g, int n) {
-  for (int i = 0; i < n; i++) { float gg; out[i] = ps8::step(in[i], &gg); g[i] = gg; }
+  for (int i = 0; i < n; i++) { float gg; out[i] = ps8::step(in[i], &gg); if (g) g[i] = gg; }
 }
 extern "C" int ps_delay() { return ps8::kD; }
 extern "C" unsigned ps_guard_peak() { return ps8::guardPeak; }
