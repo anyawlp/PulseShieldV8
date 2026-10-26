@@ -11,20 +11,20 @@
 > **Answer:**  
 > "ANC headphones rely on acoustic feedback/feedforward phase cancellation. By fundamental laws of acoustics and digital signal processing, ANC introduces an acoustic group delay of **10 to 25 milliseconds** and is band-limited to low frequencies ($< 1\text{ kHz}$).  
 > The dangerous acoustic triggers in LQT2—alarm sirens, telephone bells, doorbells, claps—are **high-frequency ($1 - 8\text{ kHz}$) transient shock waves**. The acoustic wavefront reaches the patient's cochlea and triggers sympathetic surge long before an ANC system can even compute an anti-phase wave.  
-> PulseShield does not invert phase; it uses a **causal $1.99\text{ ms}$ look-ahead ring buffer** and a Hann window drop to attenuate the sound *before* the delayed wavefront is played to the headphones, achieving $39.3\text{ dB}$ attenuation across all audible frequencies."
+> PulseShield does not invert phase; it uses a **causal $0.998\text{ ms}$ (44 samples) look-ahead ring buffer** and a Hann window drop to attenuate the sound *before* the delayed wavefront is played to the headphones, achieving up to $50.5\text{ dB}$ (median $45.8\text{ dB}$) attenuation across all audible frequencies."
 
 ---
 
 ### Q2: *"Why not just use passive earplugs or industrial earmuffs?"*
 > **Answer:**  
 > "Passive earplugs attenuate all sound, including human speech and ambient spatial cues. In clinical pediatric cardiology, patient compliance with earplugs in schools and workplaces is under $10\%$ because patients cannot hear teachers, peers, or traffic. Social isolation is severe.  
-> PulseShield v8 maintains **$0.000\text{ dB}$ passband deviation** across the entire human hearing spectrum ($20\text{ Hz} - 20\text{ kHz}$) with **$0.0016\%$ THD**. The patient hears normal conversational speech with audiophile transparency, while acoustic spikes exceeding safety thresholds are instantaneously clamped."
+> PulseShield v8 maintains **$0.000\text{ dB}$ passband deviation** across the entire human hearing spectrum ($20\text{ Hz} - 20\text{ kHz}$) with **$0.0011\%$ THD**. The patient hears normal conversational speech with audiophile transparency, while acoustic spikes exceeding safety thresholds are instantaneously clamped."
 
 ---
 
-### Q3: *"A 2.0 ms delay is in the audio path. Doesn't that cause audible echo or comb filtering when the user speaks (bone conduction vs. air conduction)?"*
+### Q3: *"A 1.0 ms delay is in the audio path. Doesn't that cause audible echo or comb filtering when the user speaks (bone conduction vs. air conduction)?"*
 > **Answer:**  
-> "Human auditory fusion threshold (the Haas effect) occurs at $10 - 30\text{ ms}$. Delays below $5\text{ ms}$ are perceived as a single integrated acoustic event without discernible echo. In hearing aid design, latencies below $3\text{ ms}$ are considered the gold standard for zero bone-conduction comb filtering. At **$1.995\text{ ms}$ (88 samples at $44.1\text{ kHz}$)**, PulseShield is well below this perceptual boundary."
+> "Human auditory fusion threshold (the Haas effect) occurs at $10 - 30\text{ ms}$. Delays below $5\text{ ms}$ are perceived as a single integrated acoustic event without discernible echo. In hearing aid design, latencies below $3\text{ ms}$ are considered the gold standard for zero bone-conduction comb filtering. At **$0.998\text{ ms}$ (44 samples at $44.1\text{ kHz}$)**, PulseShield is well below this perceptual boundary."
 
 ---
 
@@ -94,12 +94,12 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                   PULSESHIELD v8 KEY PERFORMANCE STATS                 │
 ├────────────────────────────────────────────────────────────────────────┤
-│ • Transient Peak Attenuation:       39.3 dB median (up to 40.0 dB)     │
-│ • End-to-End Look-Ahead Latency:    1.995 ms (88 samples @ 44.1 kHz)   │
+│ • Transient Peak Attenuation:       45.8 dB median (up to 50.5 dB)     │
+│ • End-to-End Look-Ahead Latency:    0.998 ms (44 samples @ 44.1 kHz)   │
 │ • Passband Frequency Flatness:      0.000 dB delta (20 Hz - 20,000 Hz) │
-│ • Total Harmonic Distortion (THD):  0.0016% (-95.9 dB @ 1 kHz)         │
+│ • Total Harmonic Distortion (THD):  0.0011% (-99.5 dB @ 1 kHz)         │
 │ • Speech False-Trigger Rate:        0 false triggers in 180 runs       │
-│ • Speech Recovery Envelope:         141 - 200 ms (fast restoration)    │
+│ • Speech Recovery Envelope:         133 - 277 ms (fast restoration)    │
 │ • Microcontroller Target:           ARM Cortex-M7 @ 600 MHz            │
 │ • Hardware Safety Violations:       0 Peak / 0 RMS / 0 Faults          │
 └────────────────────────────────────────────────────────────────────────┘

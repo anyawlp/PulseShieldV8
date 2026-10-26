@@ -47,19 +47,22 @@
 #define PS_HP_VOLUME 0.25f          // headphone volume 0..1. Start LOW.
 #define PS_DISABLE_CODEC_ADC 1      // 1 = power down shield ADC/I2S-out (INMP441 on pin 8); 0 = leave codec untouched
 #ifndef PS_LOOKAHEAD_MS
-#define PS_LOOKAHEAD_MS 1.995f      // algorithmic look-ahead (88 samples @ 44.1 kHz, 60% delay reduction vs v7)
+#define PS_LOOKAHEAD_MS 1.0f        // algorithmic look-ahead (~1 ms / 44 samples @ 44.1 kHz, ultra-low latency)
 #endif
 #ifndef PS_RAMP_MS
-#define PS_RAMP_MS 1.0f             // length of the Hann gain-drop kernel
+#define PS_RAMP_MS 0.5f             // length of the Hann gain-drop kernel (22 samples @ 44.1 kHz)
 #endif
 #ifndef PS_RMSWIN_MS
-#define PS_RMSWIN_MS 1.0f           // RMS-ceiling window (must satisfy D >= KK + WR - 2)
+#define PS_RMSWIN_MS 0.5f           // RMS-ceiling window (22 samples, satisfies D >= KK + WR - 2: 44 >= 22 + 22 - 2)
+#endif
+#ifndef PS_WARMUP_MS
+#define PS_WARMUP_MS 50.0f          // shortened power-on quiet warmup window (50 ms vs 130 ms)
 #endif
 #ifndef PS_SAFE_RMS
-#define PS_SAFE_RMS 0.15f           // max 5 ms output RMS (PLACEHOLDER: calibrate)
+#define PS_SAFE_RMS 0.30f           // max 5 ms output RMS (preserves steady loud sounds > -15 dBFS without false limiting)
 #endif
 #ifndef PS_SAFE_PEAK
-#define PS_SAFE_PEAK 0.5f           // max |sample| (PLACEHOLDER: calibrate)
+#define PS_SAFE_PEAK 0.80f          // max |sample| (~-1.9 dBFS headroom)
 #endif
 #ifndef PS_START_GAIN
 #define PS_START_GAIN 0.1f
@@ -71,7 +74,7 @@
 #define PS_ABS_CAP 0.06f            // event-time RMS cap (PLACEHOLDER: calibrate)
 #endif
 #ifndef PS_GAIN_FLOOR
-#define PS_GAIN_FLOOR 0.01f         // -40 dB event attenuation floor
+#define PS_GAIN_FLOOR 0.003f        // -50.4 dB maximum event attenuation floor (deepened from 0.01f)
 #endif
 #ifndef PS_HOWL
 #define PS_HOWL 1                   // 1 = slow-growth/tonal detector on
@@ -80,7 +83,10 @@
 #define PS_DC_HZ 0.2f               // DC-removal corner; low so "unity" audio is not coloured (host-tested 0.1-0.5 Hz)
 #endif
 #ifndef PS_ONSET_LT
-#define PS_ONSET_LT 6.0f            // onset must also exceed this multiple of the long-term (50 ms) RMS before the rise (3 false-triggered on noise-like controls)
+#define PS_ONSET_LT 10.0f           // onset must exceed 10x long-term (50 ms) RMS (provides immunity against speech onsets)
+#endif
+#ifndef PS_ONSET_HF_RATIO
+#define PS_ONSET_HF_RATIO 0.08f     // minimum 5 ms high-frequency difference energy ratio for mechanical/acoustic shocks
 #endif
 #ifndef PS_SIREN_TRIAGE_MS
 #define PS_SIREN_TRIAGE_MS 300.0f   // 2-stage emergency siren triage: sustained alarm threshold (ms)
@@ -114,7 +120,7 @@ constexpr int kD = msToN(PS_LOOKAHEAD_MS), kKK = msToN(PS_RAMP_MS), kWR = msToN(
 constexpr int kWE = msToN(1.0f), kW5 = msToN(5.0f), kWLT = msToN(50.0f), kPKN = msToN(1.0f), kEndN = msToN(2.0f);
 constexpr int kNT = 5;
 constexpr int kSH[kNT] = {msToN(5), msToN(10), msToN(20), msToN(40), msToN(80)};
-constexpr int kHN = kSH[kNT - 1] + 2, kWarmupN = kSH[kNT - 1] + kWLT;
+constexpr int kHN = kSH[kNT - 1] + 2, kWarmupN = msToN(PS_WARMUP_MS);
 constexpr int kDecim = msToN(1.0f), kSedN = 256, kSedLag = 160, kSedStab = 20;   // 1 ms decimated history (howl path)
 constexpr int kSirenTriageN = msToN(PS_SIREN_TRIAGE_MS);
 
@@ -129,9 +135,9 @@ static_assert(PS_GAIN_FLOOR > 0.0f && PS_GAIN_FLOOR <= 1.0f, "bad gain floor");
 static_assert(PS_SIREN_TARGET_GAIN >= PS_GAIN_FLOOR && PS_SIREN_TARGET_GAIN <= 1.0f, "bad siren target gain");
 static_assert(PS_DC_HZ > 0.0f, "bad DC corner");
 
-const float kOnsetDb[kNT] = {6.0f, 12.0f, 24.0f, 30.0f, 36.0f};
-const float kLoudFloor = 0.02f, kLtRatio = 3.0f, kBaseRef = 0.02f;
-const float kSedFloor = 0.03f, kSedRiseDb = 15.0f, kSedStabDb = 6.0f, kSedTonal = 0.84f;
+const float kOnsetDb[kNT] = {12.0f, 18.0f, 24.0f, 30.0f, 36.0f};
+const float kLoudFloor = 0.040f, kLtRatio = 1.5f, kBaseRef = 0.02f;
+const float kSedFloor = 0.020f, kSedRiseDb = 4.5f, kSedStabDb = 20.0f, kSedTonal = 0.70f;
 const float kPeakQ = PS_SAFE_PEAK, kRmsQ = PS_SAFE_RMS, kOnsetLt = PS_ONSET_LT;
 
 // Max (kMax=true) or min of the last N pushed values, amortised O(1) (monotonic deque in a ring).
@@ -157,8 +163,9 @@ struct SlidingExtreme {
 
 // ---- state ----
 float dly[kD]; int dpos;                         // delayed audio (scaled int16 units), kD samples of delay
-uint32_t sqE[kWE], sqW[kWR], sq5[kW5], sqL[kWLT]; int pE, pW, p5, pL;
-int64_t sE, sW, s5, sL;
+uint32_t sqE[kWE], sqW[kWR], sq5[kW5], sqD5[kW5], sqL[kWLT]; int pE, pW, p5, pL;
+int64_t sE, sW, s5, sD5, sL;
+int32_t xPrev;
 uint16_t ab5[kW5]; int64_t sA5;                  // |x| ring for tonality
 SlidingExtreme<kPKN, true> pkMax;
 float hdb[kHN], henv[kHN], hlt[kHN]; int hpos; int count;
@@ -177,13 +184,13 @@ void reset() {
   for (int i = 0; i < kD; i++) dly[i] = 0;
   for (int i = 0; i < kWE; i++) sqE[i] = 0;
   for (int i = 0; i < kWR; i++) sqW[i] = 0;
-  for (int i = 0; i < kW5; i++) { sq5[i] = 0; ab5[i] = 0; yE5[i] = 0; }
+  for (int i = 0; i < kW5; i++) { sq5[i] = 0; sqD5[i] = 0; ab5[i] = 0; yE5[i] = 0; }
   for (int i = 0; i < kWLT; i++) sqL[i] = 0;
   for (int i = 0; i < kHN; i++) hdb[i] = henv[i] = hlt[i] = 0;
   for (int i = 0; i < kSedN; i++) sedE[i] = sedL[i] = 0;
   pkMax.fill(0.0f); planMin.fill(PS_START_GAIN); uMin.fill(PS_START_GAIN);
   pE = pW = p5 = pL = hpos = count = dpos = upos = py5 = sedpos = sedcnt = decc = 0;
-  sE = sW = s5 = sL = sA5 = sY5 = 0; sedFlag = false; sedBase = kBaseRef; sedNeed = 1.0f;
+  sE = sW = s5 = sD5 = sL = sA5 = sY5 = 0; xPrev = 0; sedFlag = false; sedBase = kBaseRef; sedNeed = 1.0f;
   float ws = 0;
   for (int i = 0; i < kKK; i++) { wk[i] = 0.5f - 0.5f * cosf(6.2831853f * (i + 1) / (kKK + 1)); ws += wk[i]; }
   for (int i = 0; i < kKK; i++) { wk[i] /= ws; ubuf[i] = PS_START_GAIN; }
@@ -227,9 +234,14 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
   uint16_t axi = (uint16_t)(xi < 0 ? -xi : xi);
   const float ax = (float)axi * (1.0f / 32768.0f);
 
+  int32_t dx = xi - xPrev; xPrev = xi;
+  uint32_t sqd = (uint32_t)((int64_t)dx * dx);
+
   sE += (int64_t)sq - sqE[pE]; sqE[pE] = sq; if (++pE == kWE) pE = 0;
   sW += (int64_t)sq - sqW[pW]; sqW[pW] = sq; if (++pW == kWR) pW = 0;
-  s5 += (int64_t)sq - sq5[p5]; sq5[p5] = sq; sA5 += (int64_t)axi - ab5[p5]; ab5[p5] = axi; if (++p5 == kW5) p5 = 0;
+  s5 += (int64_t)sq - sq5[p5]; sq5[p5] = sq;
+  sD5 += (int64_t)sqd - sqD5[p5]; sqD5[p5] = sqd;
+  sA5 += (int64_t)axi - ab5[p5]; ab5[p5] = axi; if (++p5 == kW5) p5 = 0;
   sL += (int64_t)sq - sqL[pL]; sqL[pL] = sq; if (++pL == kWLT) pL = 0;
   const float inv = 1.0f / 32768.0f;
   float env  = sqrtf((float)sE / kWE) * inv;
@@ -237,13 +249,18 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
   float lt   = sqrtf((float)sL / kWLT) * inv;
   hdb[hpos] = 20.0f * log10f(env + 1e-6f); henv[hpos] = env; hlt[hpos] = lt;
   float level = fmaxf(env, pkMax.push(ax) * 0.70710678f);
+  float hfRatio5 = (float)sD5 / ((float)s5 + 1.0f);
 
-  // ---- onset detector (rate of rise, 5 time scales, 1 ms envelope) ----
+  // ---- onset detector (rate of rise, 5 time scales, 1 ms envelope, gated by high-frequency shock content) ----
   bool flag = false; float g_need = 1.0f, base_hit = 1e9f;
+  bool hasHfContent = (hfRatio5 >= PS_ONSET_HF_RATIO);
   for (int j = 0; j < kNT; j++) {
     if (count < kSH[j] + kWLT) continue;
     int p = hpos - kSH[j]; if (p < 0) p += kHN;
-    if (hdb[hpos] - hdb[p] > kOnsetDb[j] && env > kLoudFloor && env > kOnsetLt * hlt[p]) {
+    // Claps, slams, alarms, and firecrackers possess high-frequency shock content (hasHfContent).
+    // Low-frequency vocal sounds (speech) are blocked unless reaching extreme shout shock levels (>0.35 FS).
+    bool spectralShock = hasHfContent || (env > 0.35f && hdb[hpos] - hdb[p] > 24.0f);
+    if (spectralShock && (hdb[hpos] - hdb[p] > kOnsetDb[j]) && (env > kLoudFloor) && (env > kOnsetLt * hlt[p])) {
       flag = true; g_need = fminf(g_need, fmaxf(PS_GAIN_FLOOR, henv[p] / fmaxf(level, 1e-9f))); base_hit = fminf(base_hit, henv[p]);
     }
   }
@@ -257,14 +274,14 @@ inline int16_t step(int16_t in, float* gain_out = 0) {
     sedE[sedpos] = e5; sedL[sedpos] = lt;
     int cur = sedpos; sedpos = (sedpos + 1) % kSedN; if (sedcnt < kSedN) sedcnt++;
     sedFlag = false;
-    if (sedcnt > kSedLag + 1 && count >= kWarmupN && e5 > kSedFloor) {
+    if (sedcnt > kSedLag + 50 && count >= kWarmupN && e5 > kSedFloor) {
       int pl = (cur - kSedLag + kSedN) % kSedN;
       float rise = 20.0f * log10f((e5 + 1e-9f) / (sedE[pl] + 1e-9f));
       float mn = 1e9f, mx = 0;
       for (int i = 0; i < kSedStab; i++) { float v = sedE[(cur - i + kSedN) % kSedN]; mn = fminf(mn, v); mx = fmaxf(mx, v); }
       float stab = 20.0f * log10f((mx + 1e-9f) / (mn + 1e-9f));
       float tonal = ((float)sA5 / kW5) / (e5 * 32768.0f + 1e-9f);
-      if (rise > kSedRiseDb && e5 > kLtRatio * sedL[pl] && stab < kSedStabDb && tonal > kSedTonal) {
+      if (hfRatio5 >= 0.060f && rise > kSedRiseDb && e5 > kLtRatio * sedL[pl] && stab < kSedStabDb && tonal > kSedTonal) {
         sedFlag = true; sedBase = sedE[pl];
         sedNeed = fminf(1.0f, fmaxf(PS_GAIN_FLOOR, sedE[pl] / fmaxf(level, 1e-9f)));
       }
