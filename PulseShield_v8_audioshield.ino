@@ -58,11 +58,11 @@
 #ifndef PS_WARMUP_MS
 #define PS_WARMUP_MS 50.0f          // shortened power-on quiet warmup window (50 ms vs 130 ms)
 #endif
-#ifndef PS_SAFE_RMS
-#define PS_SAFE_RMS 0.30f           // max 5 ms output RMS (preserves steady loud sounds > -15 dBFS without false limiting)
-#endif
 #ifndef PS_SAFE_PEAK
 #define PS_SAFE_PEAK 0.80f          // max |sample| (~-1.9 dBFS headroom)
+#endif
+#ifndef PS_SAFE_RMS
+#define PS_SAFE_RMS (0.30f <= PS_SAFE_PEAK ? 0.30f : (PS_SAFE_PEAK >= 0.20f ? 0.20f : PS_SAFE_PEAK)) // max 5 ms output RMS
 #endif
 #ifndef PS_START_GAIN
 #define PS_START_GAIN 0.1f
@@ -92,7 +92,7 @@
 #define PS_SIREN_TRIAGE_MS 300.0f   // 2-stage emergency siren triage: sustained alarm threshold (ms)
 #endif
 #ifndef PS_SIREN_TARGET_GAIN
-#define PS_SIREN_TARGET_GAIN 0.08f  // 70 dB SPL target listening gain (solves fire evacuation paradox)
+#define PS_SIREN_TARGET_GAIN (PS_GAIN_FLOOR > 0.08f ? PS_GAIN_FLOOR : 0.08f)  // 70 dB SPL target listening gain (solves fire evacuation paradox)
 #endif
 #ifndef PS_TELEMETRY
 #define PS_TELEMETRY 1
